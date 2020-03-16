@@ -1,0 +1,134 @@
+---
+title: "RIDB-Watchman"
+author: "Soyoung Park"
+date: "3/13/2020"
+---
+
+#RIDB-Watchman project
+##Watchman overview
+*FacilityID: 232445 (unique ID)
+*LegacyFacilityID: 70923	
+*OrgFacilityID: 128
+*ParentOrgID: AN370923
+*ParentRecAreaID: 2994
+*FacilityName: WATCHMAN CAMPGROUND
+*FacilityUseFeeDescription: A \$10.00 service fee will apply if you change your reservation.  Cancellations more than 48 hours in advance of arrival date incur a \$10 cancellation fee. Within 48 hours of arrival, a \$10 cancellation fee and the first night's fee are charged.  "	Campground	Zion Group Site fees are \$50, \$90 or \$130 per night based on the campsite capacity. Check the minimum and maximum capacity for each group site. Each group sites minimum required occupants vary.
+*FacilityLongitude: -112.986389	
+*FacilityLatitude: 37.198611	
+*LastUpdatedDate: 3/13/20
+
+```{r load packages}
+library(readr)
+library(data.table)
+require(psych)
+require(dplyr)
+require(tidyr)
+require(reshape2)
+require(lubridate)
+```
+
+```{r load facility and campsite info}
+#set working directory
+setwd("~/Documents/GitHub/RIDB-Watchman")
+
+#load data
+facilities <- fread("~/Documents/GitHub/RIDB-Watchman/RIDBFullExport_V1_CSV/Facilities_API_v1.csv") #campsite characteristics
+glimpse(facilities)
+Watchman <- facilities[facilities$FacilityName=="WATCHMAN CAMPGROUND",] #watchman campground info
+rm(facilities)
+
+campsites <- fread("~/Documents/GitHub/RIDB-Watchman/RIDBFullExport_V1_CSV/Campsites_API_v1.csv") #campsite characteristics
+campsites <- campsites[campsites$FacilityID==232445,]
+glimpse(campsites)
+unique(campsites$CampsiteType)
+```
+
+```{r load reservation data}
+# reservation <- fread("~/Documents/GitHub/RIDB-Watchman/reservations2018.csv") #2018 RIDB dataset
+# colnames(reservation) #column names - FacilityID exists
+# 
+# #subset data just for Watchman
+# reservation <- reservation[reservation$FacilityID==232445,]
+# glimpse(reservation)
+# unique(reservation$Park) #confirming that the data only has Watchman as the campground
+# 
+# fwrite(reservation, file = "~/Documents/GitHub/RIDB-Watchman/Watchman.csv")
+```
+
+```{r load Watchman reservation data}
+rm(list=ls())
+
+reservation <- fread("~/Documents/GitHub/RIDB-Watchman/Watchman.csv")
+unique(reservation$RegionDescription) # Zion National Park
+unique(reservation$Park) # Watchman
+count(reservation, 'HisoricalReservationID') # 28522 obersvations
+count(distinct(reservation)) # 28522 obersvations
+
+camp <- reservation[grepl("Overnight", reservation[["UseType"]]), ] # all are campsites
+
+unique(camp$SiteType)
+unique(camp$EntityID) #189 <- this is the CampsiteID
+unique(camp$ProductID) #189
+```
+
+```{r How many dates do people book in advance}
+head(camp)
+
+#calculate difference between the reservation date and the start date
+camp$bookingWindow <- as.Date(as.character(camp$StartDate), format="%Y-%m-%d") - as.Date(as.character(camp$OrderDate), format="%Y-%m-%d")
+camp$bookingWindow <- as.numeric(camp$bookingWindow)
+
+summary(camp$bookingWindow) #there are negative booking windows
+
+camp[camp$bookingWindow<0 ,] #there are 9 negative date differences between the reservation and the start date. This could be system error.
+
+camp <- camp[camp$bookingWindow>-1,] #remove 9 negative booking window (data reduced from 28522 to 28513)
+summary(camp$bookingWindow)
+#mean 90 days, median 85 days, min 0, max 357
+```
+
+```{r length of stay}
+#calculate difference between the end date and the start date
+camp$lengthStay <- as.Date(as.character(camp$EndDate), format="%Y-%m-%d") - as.Date(as.character(camp$StartDate), format="%Y-%m-%d")
+
+camp$lengthStay <- as.numeric(camp$lengthStay) #number of nights stayed
+summary(camp$lengthStay) # no negative length of stay
+#mean 2 days, max 16 days
+
+glimpse(camp)
+```
+
+```{r merge with campsite info}
+campsites$EntityID <- as.integer(campsites$CampsiteID)
+camp <- full_join(camp, campsites)
+
+unique(camp$CampsiteName) #179 campistes.
+count(camp[camp$CampsiteName=="",]) #1265 reservations do not have a Campsite Name associated with it. We delete these.
+
+camp <- camp[!is.na(camp$CampsiteName),] #reduced to 27248 observations
+```
+
+```{r average booking window per campsite}
+camp <- camp %>%
+  group_by(CampsiteName) %>%
+  mutate(avgBookingWindow = mean(bookingWindow)) 
+
+summary(camp$avgBookingWindow)
+
+fwrite(camp, file = "~/Documents/GitHub/RIDB-Watchman/WatchmanDataset.csv")
+
+colnames(camp)
+
+bookingwindow <- select(camp, OrgID, RegionCode, RegionDescription, ParentLocationID, ParentLocation, FacilityID, FacilityZIP, LegacyFacilityID, Park, SiteType, UseType, CampsiteID, CampsiteName, CampsiteType, TypeOfUse, Loop, CampsiteAccessible, CampsiteLongitude, CampsiteLatitude, avgBookingWindow)
+
+bookingwindow <- distinct(bookingwindow)
+
+fwrite(bookingwindow, file = "~/Documents/GitHub/RIDB-Watchman/WatchmanDataset_Campsite_level.csv")
+
+bookingwindow_campsite <- select(bookingwindow, -SiteType)
+bookingwindow_campsite <- distinct(bookingwindow_campsite)
+
+fwrite(bookingwindow_campsite, file = "~/Documents/GitHub/RIDB-Watchman/WatchmanDataset_Campsite_level_no_siteType.csv")
+```
+
+
