@@ -103,15 +103,16 @@ camp <- camp[camp$lengthStay>-1,] #remove 14 negative booking window (data reduc
 summary(camp$lengthStay) 
 #mean 2.3 days, max 360 days <- the dataset is a little weird! Can people stay longer than 360 days??
 
-camp[camp$lengthStay>30 ,] #31 reservations with more than 30 days.
+camp <- camp[camp$lengthStay<15 ,] #43 reservations with more than 14 days.
 #glimpse(camp)
 ```
 
 ```{r average booking window per campsite}
-out <- left_join(camp, campsites, by = "facilityid")
-unique(camp$campsitename) #179 campistes.
+names(camp)[names(camp)=="productid"] <- "campsiteid"
+campsites$campsiteid <- as.integer(campsites$campsiteid)
+out <- full_join(camp, campsites, by = "campsiteid")
 
-out <- select(camp, campsitename, campsitetype, bookingWindow, lengthStay)
+unique(out$campsitename) #179 campistes.
 
 out$campsitename <- as.factor(out$campsitename)
 
@@ -119,18 +120,34 @@ out <- out %>%
   group_by(campsitename) %>%
   mutate(avgBookingWindow = mean(bookingWindow)) 
 
-head(out)
+out <- out %>%
+  group_by(campsitename) %>%
+  mutate(avgLengthStay = mean(lengthStay)) 
 
-summary(camp$bookingWindow)
+summary(out$bookingWindow)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#    0.0    19.0   121.0   101.8   173.0   331.0 
 summary(out$avgBookingWindow)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  50.38   89.83  100.51  101.81  113.60  148.85 
+summary(out$lengthStay)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  0.000   1.000   2.000   2.086   3.000  14.000 
+summary(out$avgLengthStay)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  1.652   1.873   2.007   2.086   2.250   3.279
 
-fwrite(camp, file = "~/Documents/GitHub/RIDB-Watchman/WatchmanDataset.csv")
+fwrite(out, file = "~/Documents/GitHub/RIDB-Watchman/WatchmanDataset_2020.csv")
 
-colnames(camp)
+bookingwindow <- select(out, regiondescription, parentlocation, park, usetype, 
+                        sitetype, usetype, campsitetype, campsiteid, campsitename, campsitename,
+                        loop, campsiteaccessible, campsitelongitude, campsitelatitude,
+                        avgBookingWindow, avgLengthStay)
 
-bookingwindow <- select(camp, OrgID, RegionCode, RegionDescription, ParentLocationID, ParentLocation, FacilityID, FacilityZIP, LegacyFacilityID, Park, SiteType, UseType, CampsiteID, CampsiteName, CampsiteType, TypeOfUse, Loop, CampsiteAccessible, CampsiteLongitude, CampsiteLatitude, avgBookingWindow)
+bookingwindow <- bookingwindow %>%
+  distinct()
 
-fwrite(camp, file = "~/Documents/GitHub/RIDB-Watchman/WatchmanDataset_Campsite_level.csv")
+fwrite(bookingwindow, file = "~/Documents/GitHub/RIDB-Watchman/WatchmanDataset_Campsite_level_2020.csv")
 ```
 
 
