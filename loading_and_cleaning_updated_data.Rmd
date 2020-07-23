@@ -26,7 +26,7 @@ require(reshape2)
 require(lubridate)
 ```
 
-```{r load facility and campsite info}
+```{r load data}
 rm(list=ls())
 #set working directory
 setwd("~/Documents/GitHub/RIDB-Watchman")
@@ -45,6 +45,10 @@ campsites <- fread("~/Documents/GitHub/RIDB-Watchman/data/Campsites_API_v1.csv")
 campsites <- campsites[campsites$FacilityID==232445,]
 glimpse(campsites)
 unique(campsites$CampsiteType)
+names(campsites) <- tolower(names(campsites))
+
+reservation <- watchman
+head(reservation)
 ```
 
 ```{r load reservation data}
@@ -60,17 +64,15 @@ unique(campsites$CampsiteType)
 ```
 
 ```{r load Watchman reservation data}
-rm(list=ls())
-
-reservation <- watchman
 unique(reservation$parentlocation) # Zion National Park
-unique(reservation$park) # Watchman
-count(reservation, 'hisoricalreservationid') # 24683 obersvations
-count(distinct(reservation)) # 24683 obersvations
+unique(reservation$park) # WATCHMAN CAMPGROUND
+count(distinct(watchman)) # 24683 reservations
 
-camp <- reservation[grepl("Overnight", reservation[["usetype"]]), ] #24676 observations. Removed 7 data points
+camp <- reservation[grepl("Overnight", reservation[["usetype"]]), ] #24676 observations. 
 
-unique(camp$sitetype) #"TENT ONLY NONELECTRIC"/"STANDARD ELECTRIC"/"WALK TO"/"GROUP TENT ONLY AREA NONELECTRIC"/"MANAGEMENT"                      
+unique(camp$campsitetype) #"TENT ONLY NONELECTRIC"/"STANDARD ELECTRIC"/"WALK TO"/"GROUP TENT ONLY AREA NONELECTRIC"/"MANAGEMENT"    
+
+unique(camp$campsitename) #corresponds to product ID
 length(unique(camp$productid)) #179
 ```
 
@@ -83,9 +85,9 @@ camp$bookingWindow <- as.numeric(camp$bookingWindow)
 
 summary(camp$bookingWindow) #there are negative booking windows
 
-camp[camp$bookingWindow<0 ,] #there are 737 negative date differences between the reservation and the start date. This could be system error as most of them have order date of 2019-10-01 00:00:00 and start date in 2018. Only a few had the order date same as the end date.
+camp[camp$bookingWindow<0 ,] #there are 737 reservations with negative date differences between the reservation and the start date. This could be system error as most of them have order date of 2019-10-01 00:00:00 and start date in 2018. Only a few had the order date same as the end date.
 
-camp <- camp[camp$bookingWindow>-1,] #remove 737 negative booking window (data reduced from 24676 to 23939)
+camp <- camp[camp$bookingWindow>-1,] #data reduced to 23939
 
 summary(camp$bookingWindow)
 #mean 102 days, median 121 days, min 0, max 331
@@ -96,29 +98,31 @@ summary(camp$bookingWindow)
 camp$lengthStay <- as.Date(as.character(camp$enddate), format="%Y-%m-%d") - as.Date(as.character(camp$startdate), format="%Y-%m-%d")
 
 camp$lengthStay <- as.numeric(camp$lengthStay) #number of nights stayed
-camp[camp$lengthStay<0 ,] # 14 observations with negative length of stay.
-camp <- camp[camp$lengthStay>-1,] #remove 14 negative booking window (data reduced from 23939 to 23925)
+camp[camp$lengthStay<0 ,] # 14 reservations with negative length of stay.
+camp <- camp[camp$lengthStay>-1,] #remove 14 negative booking window (data reduced to 23925)
 summary(camp$lengthStay) 
-#mean 0 days, max 360 days <- the dataset is a little wierd!
-glimpse(camp)
-```
+#mean 2.3 days, max 360 days <- the dataset is a little weird! Can people stay longer than 360 days??
 
-```{r merge with campsite info}
-campsites$EntityID <- as.integer(campsites$CampsiteID)
-camp <- full_join(camp, campsites)
-
-unique(camp$CampsiteName) #179 campistes.
-count(camp[camp$CampsiteName=="",]) #1265 reservations do not have a Campsite Name associated with it. We delete these.
-
-camp <- camp[!is.na(camp$CampsiteName),] #reduced to 27248 observations
+camp[camp$lengthStay>30 ,] #31 reservations with more than 30 days.
+#glimpse(camp)
 ```
 
 ```{r average booking window per campsite}
-camp <- camp %>%
-  group_by(CampsiteName) %>%
+out <- left_join(camp, campsites, by = "facilityid")
+unique(camp$campsitename) #179 campistes.
+
+out <- select(camp, campsitename, campsitetype, bookingWindow, lengthStay)
+
+out$campsitename <- as.factor(out$campsitename)
+
+out <- out %>%
+  group_by(campsitename) %>%
   mutate(avgBookingWindow = mean(bookingWindow)) 
 
-summary(camp$avgBookingWindow)
+head(out)
+
+summary(camp$bookingWindow)
+summary(out$avgBookingWindow)
 
 fwrite(camp, file = "~/Documents/GitHub/RIDB-Watchman/WatchmanDataset.csv")
 
